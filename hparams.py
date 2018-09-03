@@ -95,8 +95,8 @@ hparams = tf.contrib.training.HParams(
 	# If input_type is raw or mulaw, network assumes scalar input and
 	# discretized mixture of logistic distributions output, otherwise one-hot
 	# input and softmax output are assumed.
-	input_type="raw",
-	quantize_channels=2 ** 16,  # 65536 (16-bit) (raw) or 256 (8-bit) (mulaw or mulaw-quantize) // number of classes = 256 <=> mu = 255
+	input_type="mulaw",
+	quantize_channels=2 ** 8,  # 65536 (16-bit) (raw) or 256 (8-bit) (mulaw or mulaw-quantize) // number of classes = 256 <=> mu = 255
 
 	log_scale_min=float(np.log(1e-14)), #Mixture of logistic distributions minimal log scale
 	log_scale_min_gauss = float(np.log(1e-7)), #Gaussian distribution minimal allowed log scale
@@ -177,7 +177,7 @@ hparams = tf.contrib.training.HParams(
 	wavenet_random_seed = 5339, # S=5, E=3, D=9 :)
 	wavenet_swap_with_cpu = False, #Whether to use cpu as support to gpu for decoder computation (Not recommended: may cause major slowdowns! Only use when critical!)
 
-	wavenet_batch_size = 4, #batch size used to train wavenet.
+	wavenet_batch_size = 2, #batch size used to train wavenet.
 	wavenet_test_size = 0.0441, #% of data to keep as test data, if None, wavenet_test_batches must be not None
 	wavenet_test_batches = None, #number of test batches.
 	wavenet_data_random_state = 1234, #random state for train test split repeatability
