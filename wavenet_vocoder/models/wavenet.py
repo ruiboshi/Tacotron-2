@@ -339,11 +339,13 @@ class WaveNet():
 
 				if is_mulaw_quantize(hparams.input_type):
 					y_hat = tf.reshape(tf.argmax(y_hat, axis=1), [batch_size, -1])
+					self.out_node = y_hat
 					y_hat = util.inv_mulaw_quantize(y_hat, hparams.quantize_channels)
 				elif is_mulaw(hparams.input_type):
 					y_hat = util.inv_mulaw(tf.reshape(y_hat, [batch_size, -1]), hparams.quantize_channels)
 				else:
 					y_hat = tf.reshape(y_hat, [batch_size, -1])
+
 
 				self.y_hat = y_hat
 

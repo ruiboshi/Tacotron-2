@@ -3,6 +3,7 @@ import os
 
 import tensorflow as tf
 from tensorflow.python.tools import optimize_for_inference_lib
+from tensorflow.tools.graph_transforms import TransformGraph
 from tensorflow.python.framework import graph_util
 from tensorflow.python.platform import gfile
 
@@ -10,6 +11,15 @@ from hparams import hparams
 from tacotron.synthesize import Synthesizer as TacoSynthesizer
 from wavenet_vocoder.synthesize import Synthesizer as WaveSynthesizer
 
+def _transform_ops():
+    return [
+        'add_default_attributes',
+        'remove_nodes(op=Identity, op=CheckNumrics)',
+        'fold_batch_norms',
+        'fold_old_batch_norms',
+        'strip_unused_nodes',
+        'sort_by_execution_order'
+    ]
 
 def _get_node_name(tensors):
     if isinstance(tensors, list):
@@ -24,25 +34,27 @@ def TacotronFreezer(checkpoint_path, hparams, output_dir):
 
     os.makedirs(output_dir, exist_ok=True)
 
+    tf.train.write_graph(synth.session.graph, output_dir, 'taco_variable_graph_def.pb', as_text=False)
+    
+    transformed_graph_def = TransformGraph(
+        synth.session.graph.as_graph_def(), 
+        inputs=_get_node_name([synth.model.inputs, synth.model.input_lengths]),
+        outputs=_get_node_name([synth.mel_outputs]),
+        transforms=_transform_ops()
+    )
+
     const_graph_def = graph_util.convert_variables_to_constants(
         synth.session,
-        synth.session.graph.as_graph_def(),
+        transformed_graph_def,
         _get_node_name([synth.mel_outputs])
     )
 
-    optimized_const_graph_def = optimize_for_inference_lib.optimize_for_inference(
-        input_graph_def=const_graph_def,
-        input_node_names=_get_node_name([synth.model.inputs, synth.model.input_lengths]),
-        output_node_names=_get_node_name([synth.mel_outputs]),
-        placeholder_type_enum=tf.float32.as_datatype_enum,
-        toco_compatible=False
-    )
-
-    optimized_const_graph_def = optimize_for_inference_lib.fold_batch_norms(optimized_const_graph_def)
+    print('input_tensors: {}'.format(_get_node_name([synth.model.inputs, synth.model.input_lengths])))
+    print('output_tensors: {}'.format(_get_node_name([synth.mel_outputs])))
 
     try:
-        optimize_for_inference_lib.ensure_graph_is_valid(optimized_const_graph_def)
-        tf.train.write_graph(optimized_const_graph_def, output_dir, 'frozen_tacotron.pb', as_text=False)
+        optimize_for_inference_lib.ensure_graph_is_valid(const_graph_def)
+        tf.train.write_graph(const_graph_def, output_dir, 'optimized_frozen_tacotron.pb', as_text=False)
     except ValueError as e:
         print('Graph is invalid - {}'.format(e))
     
@@ -51,27 +63,30 @@ def WaveNetFreezer(checkpoint_path, hparams, output_dir):
     synth = WaveSynthesizer()
     synth.load(checkpoint_path, hparams)
 
+    tf.train.write_graph(synth.session.graph, output_dir, 'wavenet_variable_graph_def.pb', as_text=False)
+
+    transformed_graph_def = TransformGraph(
+        synth.session.graph.as_graph_def(), 
+        inputs=_get_node_name([synth.local_conditions]),
+        outputs=_get_node_name([synth.model.out_node]),
+        transforms=_transform_ops()
+    )
+
     const_graph_def = graph_util.convert_variables_to_constants(
         synth.session,
-        synth.session.graph.as_graph_def(),
-        _get_node_name([synth.model.y_hat])
+        transformed_graph_def,
+        _get_node_name([synth.model.out_node])
     )
 
-    optimized_const_graph_def = optimize_for_inference_lib.optimize_for_inference(
-        input_graph_def=const_graph_def,
-        input_node_names=_get_node_name([synth.local_conditions]),
-        output_node_names=_get_node_name([synth.model.y_hat]),
-        placeholder_type_enum=tf.float32.as_datatype_enum,
-        toco_compatible=False
-    )
-
-    optimized_const_graph_def = optimize_for_inference_lib.fold_batch_norms(optimized_const_graph_def)
+    print('input_tensors: {}'.format(_get_node_name([synth.local_conditions])))
+    print('output_tensors: {}'.format(_get_node_name([synth.model.out_node])))
 
     os.makedirs(output_dir, exist_ok=True)
 
     try:
-        optimize_for_inference_lib.ensure_graph_is_valid(optimized_const_graph_def)
-        tf.train.write_graph(optimized_const_graph_def, output_dir, 'frozen_wavenet.pb', as_text=False)
+        optimize_for_inference_lib.ensure_graph_is_valid(const_graph_def)
+        tf.train.write_graph(const_graph_def, output_dir, 'optimized_frozen_wavenet.pb', as_text=False)
+
     except ValueError as e:
         print('Graph is invalid - {}'.format(e))
 
